@@ -205,8 +205,12 @@ if (sysCallNo == 4) then
 	
 	// Free FAT entry **
 	[FAT + FATIndex * 8] = -1;
-	[FAT + FATIndex * 8 + 2] = -1;
+        [FAT + FATIndex * 8 + 1] = 0;
 	
+	
+         [3072 + [FAT + FATIndex * 8 + 2]] = 0;
+
+         [FAT + FATIndex * 8 + 2] = -1;
 	// update FAT , DFL
 	store(5, 19);	
 	store(6, 20);	
