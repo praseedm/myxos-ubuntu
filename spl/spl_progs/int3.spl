@@ -1,0 +1,101 @@
+
+alias physicalSP S0;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+// find out the system call number
+alias sysCallNo S1;
+sysCallNo = [physicalSP - 1];
+
+alias currentPCB S2;
+currentPCB = READY_LIST + 32 * ((PTBR - 1024) / 8); 
+
+if (sysCallNo == 6) then //**seek
+
+alias fileDescriptor S3;
+alias newLSEEK S4;
+
+//file descriptor is pushed first 
+fileDescriptor = [physicalSP - 4];
+newLSEEK = [physicalSP - 3];
+
+if (fileDescriptor < 0 || fileDescriptor > 7) then
+[physicalSP - 2] = -1;
+ireturn;
+endif;
+
+if ([currentPCB + 15 + fileDescriptor * 2] == -1) then // invalid index to SWOFT
+[physicalSP - 2] = -1;
+ireturn;
+endif;
+
+alias FATIndex S5;
+FATIndex = [FILE_TABLE + [currentPCB + 15 + fileDescriptor * 2] * 2];
+
+alias fileSize S6;
+fileSize = [FAT + FATIndex * 8 + 1]; // fetch the file size from the FAT
+
+// validate new LSEEK 
+if (newLSEEK < 0 || newLSEEK > fileSize) then
+[physicalSP - 2] = -1;
+ireturn;
+endif;
+
+// change the LSEEK 
+[currentPCB + 15 + fileDescriptor * 2 + 1] = newLSEEK;
+
+[physicalSP - 2] = 0;
+ireturn;
+endif;
+
+
+if (sysCallNo == 7) then // ** Read()
+
+alias fileDescriptor S3;
+
+fileDescriptor = [physicalSP - 4];
+
+// validate file descriptor
+if (fileDescriptor < 0 || fileDescriptor > 7) then
+[physicalSP - 2] = -1;
+ireturn;
+endif;
+
+alias SWOFTIndex S4;
+alias LSEEKPosition S5;
+SWOFTIndex = [currentPCB + 15 + fileDescriptor * 2];
+
+// check SWOFT Index
+if (SWOFTIndex == -1) then
+[physicalSP - 2] = -1;
+ireturn;
+endif;
+
+LSEEKPosition = [currentPCB + 15 + fileDescriptor * 2 + 1];
+alias FATIndex S6;
+
+FATIndex = [FILE_TABLE + [currentPCB + 15 + fileDescriptor * 2] * 2];
+
+// load the basic block 
+load(1, [FAT + FATIndex * 8 + 2]);
+
+// fetch the file size from the FAT
+alias fileSize S7;
+fileSize = [FAT + FATIndex * 8 + 1];
+
+// check if LSEEK position is at EOF
+if (LSEEKPosition == fileSize) then
+[physicalSP - 2] = -1;
+ireturn;
+endif;
+
+// load the block from which the disk is to be read onto the scratchpad
+load(1, [SCRATCHPAD + (LSEEKPosition / 512)]);
+
+// store the word that was read in the stack
+[physicalSP - 3] = [SCRATCHPAD + (LSEEKPosition % 512)];
+
+// increment LSEEK position by one in the PPOFT
+[currentPCB + 15 + fileDescriptor * 2 + 1] = LSEEKPosition + 1;
+
+[physicalSP - 2] = 0;
+ireturn;
+endif;

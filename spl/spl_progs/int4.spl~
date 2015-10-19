@@ -1,0 +1,88 @@
+// Source code for interrupt 4
+// get the system call number
+// it will be stored in location SP - 1
+// since code is executing in kernel mode, convert to physical address first
+alias physicalSP S0;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+// find out the system call number
+alias sysCallNo S1;
+sysCallNo = [physicalSP - 1];
+// needed for accessing PPOFT of the processes
+alias currentPCB S2;
+currentPCB = READY_LIST + 32 * ((PTBR - 1024) / 8); // that expression after 32 is PID of the current process
+if (sysCallNo == 5) then
+// implementation of the Write system call
+alias fileDescriptor S3;
+alias wordToWrite S9;
+// note that file descriptor is pushed first and then the word to write
+// so get the arguments correspondingly
+wordToWrite = [physicalSP - 3];
+fileDescriptor = [physicalSP - 4];
+// check if the file descriptor is valid
+if (fileDescriptor < 0 || fileDescriptor > 7) then
+[physicalSP - 2] = -1;
+ireturn;
+endif;
+// check if the pointer to SWOFT is valid
+if ([currentPCB + 15 + fileDescriptor * 2] == -1) then
+[physicalSP - 2] = -1;
+ireturn;
+endif;
+alias SWOFTIndex S5;
+alias LSEEKPosition S6;
+SWOFTIndex = [currentPCB + 15 + fileDescriptor * 2];
+LSEEKPosition = [currentPCB + 15 + fileDescriptor * 2 + 1];
+alias FATIndex S7;
+FATIndex = [FILE_TABLE + SWOFTIndex * 2];
+// load the basic block from the FAT to the scratchpad
+load(1, [FAT + FATIndex * 8 + 2]);
+// use the LSEEK position and find the block number of the disk to write to
+// this is obtained by LSEEKPosition / 512
+alias blockNoInBasicBlock S8;
+blockNoInBasicBlock = LSEEKPosition / 512;
+if ([SCRATCHPAD + blockNoInBasicBlock] == -1) then
+// need to allocate a new block
+// find a free block in the disk
+// search the memory copy of the disk free list
+// 447 because the remaining space is used as swap area
+alias DFListIndex S4; // Disk Free List Index
+DFListIndex = 0;
+while (DFListIndex < 447) do
+if ([FAT + 512 + DFListIndex] == 0) then
+break;
+endif;
+DFListIndex = DFListIndex + 1;
+endwhile;
+if (DFListIndex == 447) then
+// no valid entry
+[physicalSP - 2] = -1;
+ireturn;
+endif;
+// remaining maintenance
+// set 1 in the entry for free block in the disk free list
+[FAT + 512 + DFListIndex] = 1;
+// add the block to the basic block of the file
+[SCRATCHPAD + blockNoInBasicBlock] = DFListIndex;
+// commit the basic block to the disk
+store(1, [FAT + FATIndex * 8 + 2]);
+// increment file size in FAT entry
+[FAT + FATIndex * 8 + 1] = [FAT + FATIndex * 8 + 1] + 512;
+// commit the FAT and disk free list
+store(5, 19); // store the FAT
+store(6, 20); // store the Disk Free List
+endif;
+// fetch the block from the disk to the scratchpad
+alias blockToWriteTo S10;
+blockToWriteTo = [SCRATCHPAD + blockNoInBasicBlock];
+load(1, blockToWriteTo);
+// write the argument to disk
+[SCRATCHPAD + LSEEKPosition % 512] = wordToWrite;
+print wordToWrite;
+// store the block back to the disk
+store(1, blockToWriteTo);
+// increment the LSEEKPosition by 1
+[currentPCB + 15 + fileDescriptor * 2 + 1] = [currentPCB + 15 + fileDescriptor * 2 + 1] + 1;
+// return with success exit status
+[physicalSP - 2] = 0;
+ireturn;
+endif;

@@ -22,7 +22,7 @@ integer main()
 	read(option);
 
 	while(1==1) do
-		if(option == 8) then
+		if(option == 6) then
 			break;
 		endif;
 		
