@@ -23,6 +23,13 @@ load (15, 9);
 load (16, 10);
 load (17, 11); 
 load (18, 12);
+load (19, 13);
+load (20, 14);
+load (21, 15);
+load (22, 16);
+load (23, 17);
+load (24, 18);
+
 
 PTBR = PAGE_TABLE;
 PTLR = 4;
@@ -75,6 +82,8 @@ while( i < 128) do
  i = i + 2;
 endwhile;
 
+//per-process open file set to invalid
+
 alias counter S0;
 counter = 0;
 while (counter < 16) do
@@ -84,6 +93,31 @@ while (counter < 16) do
 	
 endwhile;
 
+//mark first 29 used in DFL
+counter = 0;
+
+while (counter < 29) do
+ [MEM_LIST + counter] = 1; // set as used
+ counter = counter + 1;
+endwhile;
+
+while (counter < 64) do
+// set as available
+[MEM_LIST + counter] = 0;
+counter = counter + 1;
+endwhile;
+
+//set state free all processes
+
+counter = 0;
+while (counter < 32) do
+// 32 processes in memory
+ [READY_LIST + counter * 32 + 1] = 0;
+ counter = counter + 1;
+endwhile;
+
+
+[READY_LIST + 1] = 2; // INIT STATE as running
 
 ireturn;
 
