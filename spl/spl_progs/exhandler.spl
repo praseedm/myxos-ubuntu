@@ -1,0 +1,128 @@
+alias Cause S0;
+alias BadVAddr S1;
+alias IPAddress S2;
+
+alias counter S3;
+alias freePageIndex S4;
+alias PTBRCounter S5;
+alias VPagenum S9;
+alias TRUE S11;
+TRUE = 1;	
+
+Cause = EFR % 10;
+BadVAddr = (EFR / 10) % 100;
+IPAddress = (EFR / 1000);
+VPagenum = [PTBR + BadVAddr * 2];
+
+alias physicalSP S10;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+
+
+if (Cause != 0) then
+	SP = SP + 1;
+	[physicalSP] = 10;
+	inline "JMP 11776";
+endif;
+
+if (VPagenum == -1) then
+	SP = SP + 1;
+	[physicalSP] = 10;
+	inline "JMP 11776";
+endif;
+
+counter = 25;
+while (counter < 64) do
+	if ([MEM_LIST + counter] == 0) then
+		freePageIndex = counter;
+		[MEM_LIST + counter] = 1;
+		break;
+	endif;
+	counter = counter + 1;
+endwhile;
+
+if (counter == 64) then
+	
+	alias startPTEntry S6;
+	alias PTEntryCounter S7;
+	alias swapPageIndex S8;
+
+	// find the entry that lead to the exception
+	startPTEntry = PTBR - 1024 + BadVAddr * 2;
+
+	while (TRUE == 1) do
+
+		PTEntryCounter = (startPTEntry + 2) % 256;
+
+		while (PTEntryCounter != startPTEntry) do
+	
+			if (PTEntryCounter % 8 == 6) then
+				PTEntryCounter = (PTEntryCounter + 2) % 256;
+				continue;
+			endif;
+	
+			if ([PAGE_TABLE + PTEntryCounter + 1] == "01") then
+		
+				if ([MEM_LIST + [PAGE_TABLE + PTEntryCounter]] > 1) then
+					PTEntryCounter = PTEntryCounter + 2;
+					continue;
+				endif;
+		
+				swapPageIndex = 448;
+				while (swapPageIndex < 512) do
+					if ([DISK_LIST + swapPageIndex] == 0) then
+						store([PAGE_TABLE + PTEntryCounter], swapPageIndex);
+
+						[DISK_LIST + swapPageIndex] = 1;
+						freePageIndex = [PAGE_TABLE + PTEntryCounter];
+						[PAGE_TABLE + PTEntryCounter] = swapPageIndex;
+						[PAGE_TABLE + PTEntryCounter + 1] = "00";
+						break;						
+					endif;
+					swapPageIndex = swapPageIndex + 1;
+				endwhile;
+			
+				if (swapPageIndex == 512) then
+					SP = SP + 1;
+					[physicalSP] = 10;
+					inline "JMP 11776";
+				endif;
+		
+				if (swapPageIndex != 512) then
+					break;
+				endif;					
+			
+			endif;
+	
+			if ([PAGE_TABLE + PTEntryCounter + 1] == "11") then
+				[PAGE_TABLE + PTEntryCounter + 1] = "01";
+		
+			endif;
+	
+			PTEntryCounter = (PTEntryCounter + 2) % 256;		
+	
+		endwhile;
+
+		if (PTEntryCounter != startPTEntry) then
+			break;
+		endif;
+
+	endwhile;
+
+endif;
+
+if (VPagenum > 20 && VPagenum < 448) then
+	load(freePageIndex, VPagenum);
+endif;
+
+if (VPagenum > 447) then
+	load (freePageIndex, VPagenum);
+	[DISK_LIST + VPagenum] = [DISK_LIST + VPagenum] - 1;
+endif;
+
+[PTBR + BadVAddr * 2] = freePageIndex;
+[PTBR + BadVAddr * 2 + 1] = "11";
+
+SP = SP + 1;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+[physicalSP] = IPAddress;
+ireturn;
