@@ -12,19 +12,21 @@ integer main()
 		pid = Fork();
 		
 		if (pid > -1) then
-			pid = Wait(pid);
+		     print(pid);	
+                     pid = Wait(pid);
 		endif;
 		
 		if (pid == -2) then
+                 print("Child :");
 			pid = Exec(command);
 			if (pid == -1) then
-				print("Error running program");
+				print("Error Exec");
 				break;
 			endif;
 		endif;
 		
 		if (pid == -1) then
-			print("Cannot fork");
+			print("Error fork");
 		endif;
 		
 		print(">> ");

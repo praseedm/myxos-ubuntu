@@ -5,7 +5,7 @@ enddecl
 
 integer main()
 {
-	print("$ ");
+	print(">> ");
 	read(command);
 	
 	while (command != "exit") do
@@ -18,16 +18,16 @@ integer main()
 		if (pid == -2) then
 			pid = Exec(command);
 			if (pid == -1) then
-				print("Error running program");
+				print("Error Exec");
 				break;
 			endif;
 		endif;
 		
 		if (pid == -1) then
-			print("Cannot fork");
+			print("Error fork");
 		endif;
 		
-		print("$ ");
+		print(">> ");
 		read(command);
 		
 	endwhile;
