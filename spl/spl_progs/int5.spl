@@ -1,9 +1,5 @@
-
-
 alias physicalSP S0;
 physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
-
-// find out the system call number
 
 alias sysCallNo S1;
 sysCallNo = [physicalSP - 1];
@@ -11,171 +7,188 @@ sysCallNo = [physicalSP - 1];
 alias PID S9;
 PID = (PTBR - 1024) / 8;
 
+alias startPTEntry S15;
+alias PTEntryCounter S14;
+alias swapPageIndex S13;
+alias TRUE S12;
+TRUE = 1;
+
 if (sysCallNo == 8) then
 
-	// ** Fork() 
-	
-	// find a PCB in the ready list of PCBs
-	// newPID is index of the PCB 
 	alias newPID S2;
-	newPID = 0;
-	while (newPID < 32) do
-		if ([READY_LIST + newPID * 32 + 1] == 0) then
+	newPID = PID + 1;
+	while ((newPID % 32) != PID) do
+		if ([READY_LIST + (newPID % 32) * 32 + 1] == 0) then
 			break;
 		endif;
-		newPID = newPID + 1;	
+		newPID = newPID + 1;
 	endwhile;
-	
-	if (newPID == 32) then
+
+	newPID = newPID % 32;
+
+	if (newPID == PID) then
 		[physicalSP - 2] = -1;
 		ireturn;
 	endif;
-	
-	// set the PID of the child process to that value
-	[READY_LIST + newPID * 32] = newPID;
-	
-	
-	// duplicate executing parent process
-	
-	// count the number of valid pages used by the parent process
-	
-	alias parentPageCount S3;
-	parentPageCount = 0;
-	
-	alias counter S4;
-	counter = 0;
-	
-	
-	while (counter < 4) do
-		if ([PTBR + counter * 2 + 1] == "01" || [PTBR + counter * 2 + 1] == "11") then
-			parentPageCount = parentPageCount + 1;
-		endif;
-		counter = counter + 1;
-	endwhile;
-	
-	// check  same number of free pages in MFL
-	
-	counter = 0;
-	
-	alias freePagesCount S5;
-	freePagesCount = 0;
-	while (counter < 64) do
-		if([MEM_LIST + counter] == 0) then
-			freePagesCount = freePagesCount + 1;
-		endif;
-		if (freePagesCount == parentPageCount) then
-			break;
-		endif;
-		counter = counter + 1;
-	endwhile;
-	
-	if (freePagesCount < parentPageCount) then
-		// not enough memory
-		[physicalSP - 2] = -1;
-		ireturn;
-	endif;
-	
-	
-	alias freePageIndex S5;
-	alias wordIndex S6;	//  copy pages 
-	
+
 	alias childPTBR S7;
 	childPTBR = 1024 + newPID * 8;
-	counter = 0;
-	
-	//  assured  enough free pages in memory
-	
-	
-	while (counter < 4) do
-	
-		if ([PTBR + counter * 2 + 1] == "00") then
-			// memory page hasn't been allocated
-	
-			[childPTBR + counter * 2 + 1] = "00";
-	
-			counter = counter + 1;
-			continue;
+
+
+	alias counter S4;
+	counter = 25;
+
+	alias newStackLocation S3;
+
+	while (counter < 64) do
+		if ([MEM_LIST + counter] == 0) then
+			newStackLocation = counter;
+			[MEM_LIST + counter] = 1;
+			break;
 		endif;
-					
-		// find free page 
-		
-		freePageIndex = 0;
-		while (freePageIndex < 64) do
-			if ([MEM_LIST + freePageIndex] == 0) then
+		counter = counter + 1;
+	endwhile;
+
+	if (counter == 64) then
+		startPTEntry = childPTBR - 1018;	// 1018 = 1024 - 6
+
+		while (TRUE == 1) do
+
+			PTEntryCounter = (startPTEntry + 2) % 256;
+
+			while (PTEntryCounter != startPTEntry) do
+
+				if (PTEntryCounter % 8 == 6) then
+					PTEntryCounter = (PTEntryCounter + 2) % 256;
+					continue;
+				endif;
+
+				if ([PAGE_TABLE + PTEntryCounter + 1] == "01") then
+					if ([MEM_LIST + [PAGE_TABLE + PTEntryCounter]] > 1) then
+						PTEntryCounter = PTEntryCounter + 2;
+						continue;
+					endif;
+
+
+					swapPageIndex = 448;
+					while (swapPageIndex < 512) do
+						if ([DISK_LIST + swapPageIndex] == 0) then
+							store([PAGE_TABLE + PTEntryCounter], swapPageIndex);
+
+							[DISK_LIST + swapPageIndex] = 1;
+
+							newStackLocation = [PAGE_TABLE + PTEntryCounter];
+
+							[PAGE_TABLE + PTEntryCounter] = swapPageIndex;
+
+							[PAGE_TABLE + PTEntryCounter + 1] = "00";
+							break;
+						endif;
+						swapPageIndex = swapPageIndex + 1;
+					endwhile;
+
+					if (swapPageIndex == 512) then
+
+						[physicalSP - 2] = -1;
+						ireturn;
+					endif;
+
+					if (swapPageIndex != 512) then
+
+						break;
+					endif;
+
+				endif;
+
+				if ([PAGE_TABLE + PTEntryCounter + 1] == "11") then
+
+					[PAGE_TABLE + PTEntryCounter + 1] = "01";
+
+				endif;
+
+				PTEntryCounter = (PTEntryCounter + 2) % 256;
+
+			endwhile;
+
+			if (PTEntryCounter != startPTEntry) then
 				break;
 			endif;
-			freePageIndex = freePageIndex + 1;
+
 		endwhile;
-		
-		
-		// set as used
-		[MEM_LIST + freePageIndex] = 1;
-		
-		// copy
-		
-		wordIndex = 0;
-		while (wordIndex < 512) do
-			// freePageIndex * 512 physical address 
-			// [PTBR + counter * 2] physical page number to copy
-			[freePageIndex * 512 + wordIndex] = [[PTBR + counter * 2] * 512 + wordIndex];
-			wordIndex = wordIndex + 1;
-		endwhile;
-		
-		// update  entries
-		[childPTBR + counter * 2] = freePageIndex;
-		[childPTBR + counter * 2 + 1] = [PTBR + counter * 2 + 1];
-		
-		counter = counter + 1;
-		
+
+	endif;
+
+	alias wordIndex S6;	// to copy from one page to another
+
+
+	wordIndex = 0;
+	while (wordIndex < 512) do
+		[newStackLocation * 512 + wordIndex] = [[PTBR + 6] * 512 + wordIndex];
+		wordIndex = wordIndex + 1;
 	endwhile;
-	
-	// set BP,SP
-	[READY_LIST + newPID * 32 + 2] = BP;
-	
-	[READY_LIST + newPID * 32 + 3] = SP - 1; // IP on top
-	
-	// same as the IP of parent process because it is logical address
-	[READY_LIST + newPID * 32 + 4] = [physicalSP];
-	
-	[READY_LIST + newPID * 32 + 5] = childPTBR; // set PTBR
-	
-	[READY_LIST + newPID * 32 + 6] = 4;   // set PTLR	
-	
-	[READY_LIST + newPID * 32 + 7] = R0;
-	[READY_LIST + newPID * 32 + 8] = R1;
-	[READY_LIST + newPID * 32 + 9] = R2;
-	[READY_LIST + newPID * 32 + 10] = R3;
-	[READY_LIST + newPID * 32 + 11] = R4;
-	[READY_LIST + newPID * 32 + 12] = R5;
-	[READY_LIST + newPID * 32 + 13] = R6;
-	[READY_LIST + newPID * 32 + 14] = R7;
-	
-	// PPOFT
-	
+
+	[childPTBR + 6] = newStackLocation;
+	[childPTBR + 7] = "01";
+
+	counter = 0;
+
+	while (counter < 3) do
+
+		[childPTBR + counter * 2] = [PTBR + counter * 2];
+		[childPTBR + counter * 2 + 1] = [PTBR + counter * 2 + 1];
+
+		if ([PTBR + counter * 2 + 1] == "01" || [PTBR + counter * 2 + 1] == "11") then
+			[MEM_LIST + [PTBR + counter * 2]] = [MEM_LIST + [PTBR + counter * 2]] + 1;
+		endif;
+
+		if ([PTBR + counter * 2 + 1] == "00" && [PTBR + counter * 2] > 447) then
+			[DISK_LIST + [PTBR + counter * 2]] = [DISK_LIST + [PTBR + counter * 2]] + 1;
+			store(6, 20);
+		endif;
+
+		counter = counter + 1;
+
+	endwhile;
+
+	alias childPCB S10;
+	childPCB = READY_LIST + newPID * 32;
+
+	[childPCB] = newPID;
+
+	[childPCB + 2] = BP;
+	[childPCB + 3] = SP - 1;
+	[childPCB + 4] = [physicalSP];
+	[childPCB + 5] = childPTBR;
+	[childPCB + 6] = 4;
+	[childPCB + 7] = R0;
+	[childPCB + 8] = R1;
+	[childPCB + 9] = R2;
+	[childPCB + 10] = R3;
+	[childPCB + 11] = R4;
+	[childPCB + 12] = R5;
+	[childPCB + 13] = R6;
+	[childPCB + 14] = R7;
+	// set the parent PID
+	[childPCB + 31] = PID;
+
+
 	counter = 0;
 	while (counter < 8) do
-		[READY_LIST + newPID * 32 + 15 + counter * 2] = [READY_LIST + PID * 32 + 15 + counter * 2];	//  SWOFT
-		[READY_LIST + newPID * 32 + 15 + counter * 2 + 1] = [READY_LIST + PID * 32 + 15 + counter * 2 + 1];	// LSEEK 
-		
-                 // increment open count 
-		
-		[FILE_TABLE + [READY_LIST + PID * 32 + 15 + counter * 2] * 2 + 1] = [FILE_TABLE + [READY_LIST + PID * 32 + 15 + counter * 2] * 2 + 1] + 1;
+		[childPCB + 15 + counter * 2] = [READY_LIST + PID * 32 + 15 + counter * 2];
+		[childPCB + 15 + counter * 2 + 1] = [READY_LIST + PID * 32 + 15 + counter * 2 + 1];
+		if ([childPCB + 15 + counter * 2] != -1) then
+			[FILE_TABLE + [childPCB + 15 + counter * 2] * 2 + 1] = [FILE_TABLE + [childPCB + 15 + counter * 2] * 2 + 1] + 1;
+		endif;
 		counter = counter + 1;
 	endwhile;
-	
-	// set STATE of child to READY
-	[READY_LIST + newPID * 32 + 1] = 1;
-	
-	// set up return values
-	
-	// return value for parent is PID of child process
+
+	[childPCB + 1] = 1;
+
 	[physicalSP - 2] = newPID;
-	// return value for child is -2
-	// but we need to find the physical address of the stack
 	alias childPhysicalSP S8;
 	childPhysicalSP = ([childPTBR + 2 * ((SP - 1) / 512)] * 512) + ((SP - 1) % 512);
 	[childPhysicalSP - 1] = -2;
-	
+
 	ireturn;
-	
+
 endif;
