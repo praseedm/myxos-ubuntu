@@ -10,7 +10,7 @@ integer main()
 	
 	i = 3;
 	while(i < 20) do
-		print("starting odd wait");
+
 		ret = Wait(pid);
 
 		print(i);
