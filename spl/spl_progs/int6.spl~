@@ -29,9 +29,10 @@ if (sysCallNo == 9) then
 	endwhile;
 
 	if (FATIndex == 64) then
-	    
-		[physicalSP - 2] = -1;
-		ireturn;
+	   SP = SP + 1;
+	   [physicalSP] = 10;
+	   inline "JMP 11776";
+	   ireturn;
 	endif;
 
 	alias countCodeBlocksNew S5;
